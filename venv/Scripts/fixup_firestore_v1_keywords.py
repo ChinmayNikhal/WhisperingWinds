@@ -1,4 +1,4 @@
-#!C:\Users\Chinu\OneDrive\Desktop\ResearchProject\WhisperingWinds\backend\venv\Scripts\python.exe
+#!C:\Users\Chinu\OneDrive\Desktop\ResearchProject\WhisperingWinds\venv\Scripts\python.exe
 # -*- coding: utf-8 -*-
 # Copyright 2025 Google LLC
 #
