@@ -1,8 +1,8 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-from core.config import FIREBASE_CREDENTIALS_PATH
-
-cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
-firebase_admin.initialize_app(cred)
-db = firestore.client()
+try:
+    cred = credentials.Certificate("backend/core/firebase-service-account.json")
+    firebase_admin.initialize_app(cred)
+except Exception as e:
+    print("⚠️ Firebase not initialized yet:", e)

@@ -33,6 +33,7 @@ Thumbs.db
 firebase-adminsdk*.json
 google-services.json
 serviceAccountKey.json
+whisperingwindswiwi-firebase-adminsdk-fbsvc-cb52d17d66.json
 
 # --- Node / React (future frontend) ---
 node_modules/
