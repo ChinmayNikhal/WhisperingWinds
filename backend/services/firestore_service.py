@@ -1,16 +1,20 @@
-# from datetime import datetime
-# from core.firebase_init import db
-
-# def save_aqi_data(user_id: str, data: dict):
-#     ref = db.collection("users").document(user_id).collection("aqi_data")
-#     ref.add({
-#         "timestamp": datetime.utcnow(),
-#         "aqi": data.get("aqi"),
-#         "pollutants": data.get("pollutants")
-#     })
-
 # backend/services/firestore_service.py
+from core.firebase_init import db
+from datetime import datetime
 
-def save_aqi_data(user_id, data):
-    print("⚠️ Skipping Firestore save (Firebase not set up yet).")
-    return True
+def save_aqi_data(data: dict):
+    """
+    Save AQI data to Firestore.
+    Stores data under collection 'aqi_data', document ID = timestamp.
+    """
+    if not db:
+        print("Firestore not available — skipping save.")
+        return
+    
+    try:
+        timestamp = datetime.utcnow().isoformat()
+        doc_ref = db.collection("aqi_data").document(timestamp)
+        doc_ref.set(data)
+        print(f"AQI data saved to Firestore: {timestamp}")
+    except Exception as e:
+        print(f"Error saving AQI data: {e}")
