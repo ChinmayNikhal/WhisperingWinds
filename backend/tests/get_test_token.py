@@ -25,6 +25,10 @@ password = os.getenv("TEST_FIREBASE_PASSWORD", "test1234")
 try:
     user = auth.sign_in_with_email_and_password(email, password)
     print("\n✅ Logged in successfully!")
-    print("Token:\n", user["idToken"])
+    print("Use this full token below (copy without quotes):\n")
+    print(user["idToken"])
+    print("\nLength of token:", len(user["idToken"]))
+    print("Pyrebase project ID:", firebase_config["projectId"])
+
 except Exception as e:
     print("❌ Error logging in:", e)

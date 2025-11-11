@@ -1,0 +1,91 @@
+Deployment Instructions
+
+This document explains how to set up and run the AQI Forecast API project locally or on a server.
+
+1. Prerequisites
+
+Before you begin, ensure the following are installed:
+
+Python 3.10+
+
+pip (Python package manager)
+
+Firebase Project (for authentication)
+
+Google Cloud Air Quality API Key
+(from Google Air Quality API
+)
+
+2. Clone the Repository
+git clone https://github.com/yourusername/aqi-forecast-api.git
+cd aqi-forecast-api
+
+3. Create a Virtual Environment
+python -m venv venv
+
+
+Activate it:
+
+Windows
+
+venv\Scripts\activate
+
+
+Mac/Linux
+
+source venv/bin/activate
+
+4. Install Dependencies
+pip install -r requirements.txt
+
+5. Firebase Setup
+
+Go to Firebase Console
+.
+
+Create a new project (or use an existing one).
+
+Navigate to Project Settings → Service Accounts → Generate New Private Key.
+
+Save the downloaded file as:
+
+./firebase/firebase_service_key.json
+
+6. Environment Variables
+
+Create a .env file in the project root:
+
+GOOGLE_AIR_API_KEY=your_google_api_key_here
+FIREBASE_CREDENTIALS=firebase/firebase_service_key.json
+
+7. Run the API Server
+
+Start the FastAPI server using Uvicorn:
+
+uvicorn main:app --reload
+
+
+You should see output similar to:
+
+INFO:     Uvicorn running on http://127.0.0.1:8000
+
+8. Test Endpoints
+8.1 Verify Server
+curl http://127.0.0.1:8000/
+
+
+Expected:
+
+{"message": "AQI API Server is running"}
+
+8.2 Fetch Current AQI
+curl "http://127.0.0.1:8000/aqi/current?lat=18.5308&lon=73.8442&token=FIREBASE_ID_TOKEN"
+
+8.3 Fetch AQI Forecast
+curl "http://127.0.0.1:8000/aqi/forecast?lat=18.5308&lon=73.8442&token=FIREBASE_ID_TOKEN"
+
+9. Notes
+
+If you receive "Invalid Firebase token", ensure your frontend Firebase SDK sends a valid ID token using getIdToken().
+
+If "No AQI data found", the Google Air Quality API may not have forecast data for that region or time.
