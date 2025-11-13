@@ -1,114 +1,182 @@
 import requests
-import datetime
 import json
-import time
+from datetime import datetime, timezone
 from core.config import GOOGLE_API_KEY
 
-API_URL = "https://airquality.googleapis.com/v1/forecast:lookup"
-MAX_RETRIES = 5
-MAX_FORECAST_HOURS = 72  # Google limit
+BASE_URL = "https://airquality.googleapis.com/v1/forecast:lookup"
 
+def fetch_aqi_forecast(lat: float, lon: float, start_time: str, end_time: str):
+    """
+    Fetches the AQI forecast series between start_time and end_time for given coordinates.
+    This uses the Google Air Quality API forecast:lookup endpoint.
+    """
 
-def fetch_air_quality_forecast(lat: float, lon: float, target_time: str = None):
-    """
-    Fetch forecasted air quality for given coordinates and an optional future datetime.
-    Auto-adjusts to nearest available forecast time (within 72 hours).
-    Returns: { date, time, aqi }
-    """
     if not GOOGLE_API_KEY or GOOGLE_API_KEY == "YOUR_API_KEY":
         return {"error": "Missing or invalid Google API key in .env"}
 
-    # --- Parse or default to tomorrow same hour ---
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
-    if target_time:
-        try:
-            base_date = datetime.datetime.fromisoformat(target_time.replace("Z", "+00:00"))
-            if base_date.tzinfo is None:
-                base_date = base_date.replace(tzinfo=datetime.timezone.utc)
-        except ValueError:
-            return {"error": "Invalid datetime format. Use ISO 8601 (YYYY-MM-DDTHH:MM:SSZ)"}
-    else:
-        base_date = (now_utc + datetime.timedelta(days=1)).replace(minute=0, second=0, microsecond=0)
+    print("🌍 Fetching Air Quality Forecast Series:")
+    print(f"   → Latitude: {lat}")
+    print(f"   → Longitude: {lon}")
+    print(f"   → Start Time: {start_time}")
+    print(f"   → End Time: {end_time}")
 
-    # Clamp to max 72 hours
-    max_allowed = now_utc + datetime.timedelta(hours=MAX_FORECAST_HOURS)
-    if base_date > max_allowed:
-        print(f"[INFO] Requested date too far ({base_date}). Clamping to {max_allowed}.")
-        base_date = max_allowed
+    # ✅ API URL and Headers
+    url = f"{BASE_URL}?key={GOOGLE_API_KEY}"
+    headers = {
+        "Content-Type": "application/json",
+        "Accept-Language": "*"
+    }
 
-    # Try decreasing the forecast hour if no data
-    for back_offset in range(0, 6):  # try up to 6 hours earlier
-        date_time_utc = (base_date - datetime.timedelta(hours=back_offset)).strftime("%Y-%m-%dT%H:00:00Z")
+    # ✅ Request payload (same structure as your standalone test script)
+    payload = {
+        "universalAqi": True,
+        "location": {
+            "latitude": lat,
+            "longitude": lon
+        },
+        "period": {
+            "startTime": start_time,  # RFC 3339 format
+            "endTime": end_time
+        },
+        "languageCode": "en"
+    }
 
-        print(f"\n--- Fetching AQI Forecast ---")
-        print(f"📍 Location: {lat}, {lon}")
-        print(f"🕒 Target UTC time: {date_time_utc}")
+    try:
+        print("--- Sending Forecast Request ---")
+        response = requests.post(url, headers=headers, json=payload)
 
-        payload = {
-            "location": {"latitude": lat, "longitude": lon},
-            "dateTime": date_time_utc,
-            "extraComputations": ["POLLUTANT_ADDITIONAL_INFO"],
-            "universalAqi": True,
-            "languageCode": "en",
+        if response.status_code != 200:
+            print(f"❌ Google API Error {response.status_code}: {response.text}")
+            return {"error": f"Google API error {response.status_code}", "details": response.text}
+
+        data = response.json()
+        forecasts = data.get("forecasts", [])
+        if not forecasts:
+            print("⚠️ No forecast data returned.")
+            return {"status": "empty", "message": "No forecast data returned", "raw": data}
+
+        print(f"✅ Retrieved {len(forecasts)} forecast points.")
+        parsed_results = []
+
+        for f in forecasts:
+            # Extract AQI index data (usually under "indexes")
+            aqi_info = None
+            for idx in f.get("indexes", []):
+                if idx.get("code") == "uaqi":
+                    aqi_info = idx
+                    break
+
+            pollutants = [
+                {
+                    "code": p.get("code"),
+                    "displayName": p.get("displayName"),
+                    "value": p.get("concentration", {}).get("value"),
+                    "units": p.get("concentration", {}).get("units")
+                }
+                for p in f.get("pollutants", [])
+            ]
+
+            parsed_results.append({
+                "timestamp": f.get("dateTime"),
+                "aqi": aqi_info.get("aqi") if aqi_info else None,
+                "category": aqi_info.get("category") if aqi_info else None,
+                "dominant_pollutant": aqi_info.get("dominantPollutant") if aqi_info else None,
+                "pollutants": pollutants
+            })
+
+        result = {
+            "status": "ok",
+            "lat": lat,
+            "lon": lon,
+            "start_time": start_time,
+            "end_time": end_time,
+            "count": len(parsed_results),
+            "forecast_series": parsed_results,
+            "regionCode": data.get("regionCode")
         }
 
-        headers = {"Content-Type": "application/json", "Accept-Language": "*"}
+        print("--- Forecast Data Received ---")
+        print(json.dumps(result, indent=2))
+        return result
 
-        for attempt in range(1, MAX_RETRIES + 1):
-            try:
-                response = requests.post(
-                    f"{API_URL}?key={GOOGLE_API_KEY}",
-                    headers=headers,
-                    data=json.dumps(payload),
-                    timeout=10,
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    if not data.get("forecasts"):
-                        print(f"[DEBUG] No forecast data for {date_time_utc}")
-                        break  # try earlier hour
-
-                    forecast = data["forecasts"][0]
-                    aqi_info = forecast.get("aqiInfo", {})
-                    aqi_value = aqi_info.get("aqi")
-
-                    result = {
-                        "date": forecast.get("dateTime", "")[:10],
-                        "time": forecast.get("dateTime", "")[11:19],
-                        "aqi": aqi_value if aqi_value is not None else "N/A",
-                    }
-
-                    print(f"✅ AQI forecast: {result}")
-                    return result
-
-                elif response.status_code == 429:
-                    delay = 2 ** attempt
-                    print(f"[WARN] Rate limit hit. Retrying in {delay}s...")
-                    time.sleep(delay)
-
-                else:
-                    print(f"[ERROR] API {response.status_code}: {response.text}")
-                    break
-
-            except requests.exceptions.RequestException as e:
-                if attempt < MAX_RETRIES:
-                    delay = 2 ** attempt
-                    print(f"[WARN] Network error: {e}. Retrying in {delay}s...")
-                    time.sleep(delay)
-                else:
-                    print(f"[CRITICAL] Max retries reached: {e}")
-                    break
-
-        time.sleep(0.3)
-
-    return {"error": "No forecast data available even after fallback attempts"}
-
-
-# def get_forecast_time(base_date, hour_offset):
+    except requests.exceptions.RequestException as e:
+        print(f"🔥 Network error during forecast request: {e}")
+        return {"error": str(e)}
+    
+# def fetch_aqi_forecast(lat: float, lon: float, target_time: str):
 #     """
-#     Calculates ISO 8601 UTC timestamp for a specific hour offset.
-#     Example: 2025-10-08T14:00:00Z
+#     Fetch AQI forecast for a given lat/lon and UTC time using Google Air Quality API.
 #     """
-#     date = base_date + datetime.timedelta(hours=hour_offset)
-#     return date.strftime("%Y-%m-%dT%H:00:00Z")
+
+#     if not GOOGLE_API_KEY or GOOGLE_API_KEY == "YOUR_API_KEY":
+#         return {"error": "Missing or invalid Google API key in .env"}
+
+#     print(f"🛰️ Received Forecast Request:")
+#     print(f"   → Latitude: {lat}")
+#     print(f"   → Longitude: {lon}")
+#     print(f"   → Target Time (UTC): {target_time}")
+
+#     result = fetch_forecast(lat, lon, GOOGLE_API_KEY, target_time)
+#     return result
+
+
+# def fetch_forecast(lat, lon, api_key, target_time):
+#     url = f"{BASE_URL}?key={api_key}"
+#     payload = {
+#         "location": {"latitude": lat, "longitude": lon},
+#         "dateTime": target_time,
+#         "extraComputations": ["POLLUTANT_CONCENTRATION"],
+#         "universalAqi": True,
+#         "languageCode": "en"
+#     }
+
+#     response = requests.post(url, json=payload)
+#     if response.status_code != 200:
+#         print(f"❌ Error {response.status_code}: {response.text}\n")
+#         return {"error": f"Google API error {response.status_code}", "details": response.text}
+
+#     data = response.json()
+
+#     # ✅ Handle both possible keys (forecast or hourlyForecasts)
+#     forecasts = data.get("forecasts") or data.get("hourlyForecasts") or []
+#     if not forecasts:
+#         print("⚠️ No forecast data returned.")
+#         print(json.dumps(data, indent=2))
+#         return {"status": "empty", "message": "No forecast data returned", "raw": data}
+
+#     print(f"✅ Forecast retrieved for {target_time}")
+#     forecast = forecasts[0]  # Take the first (closest) entry
+
+#     # Extract AQI info
+#     aqi_info = None
+#     for idx in forecast.get("indexes", []):
+#         if idx.get("code") == "uaqi":
+#             aqi_info = idx
+#             break
+
+#     # Extract pollutant data
+#     pollutants = [
+#         {
+#             "code": p.get("code"),
+#             "displayName": p.get("displayName"),
+#             "value": p.get("concentration", {}).get("value"),
+#             "units": p.get("concentration", {}).get("units")
+#         }
+#         for p in forecast.get("pollutants", [])
+#     ]
+
+#     result = {
+#         "status": "ok",
+#         "timestamp": forecast.get("dateTime"),
+#         "aqi": aqi_info.get("aqi") if aqi_info else None,
+#         "category": aqi_info.get("category") if aqi_info else None,
+#         "dominant_pollutant": aqi_info.get("dominantPollutant") if aqi_info else None,
+#         "pollutants": pollutants,
+#         "regionCode": data.get("regionCode")
+#     }
+
+#     print("───────────────\n")
+#     print(json.dumps(result, indent=2))
+#     print("───────────────\n")
+
+#     return result

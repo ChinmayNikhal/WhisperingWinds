@@ -8,7 +8,7 @@ from models.forecast_model import simple_aqi_forecast
 from firebase_admin import firestore
 from datetime import datetime
 
-from services.aqi_forecast_fetcher import fetch_air_quality_forecast
+from services.aqi_forecast_fetcher import fetch_aqi_forecast
 
 app = FastAPI(title="WhisperingWinds API")
 db = firestore.client()
@@ -62,29 +62,19 @@ def get_aqi_history_route(token: str = Query(...), limit: int = Query(10)):
 
 
 @app.get("/aqi/forecast")
-def forecast_aqi(
+async def get_forecast(
     lat: float,
     lon: float,
-    token: str,
-    target_time: str = Query(None, description="ISO datetime, e.g. 2025-10-09T10:00:00Z"),
+    start_time: str,
+    end_time: str,
+    token: str
 ):
-    """
-    Fetch forecasted AQI for given coordinates and optional future time.
-    Defaults to tomorrow, same hour.
-    """
     uid = verify_token(token)
     if not uid:
-        raise HTTPException(status_code=401, detail="Invalid Firebase token")
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    print(f"✅ Token verified for UID: {uid}")
-
-    result = fetch_air_quality_forecast(lat, lon, target_time)
-
-    if "error" in result:
-        raise HTTPException(status_code=404, detail=result["error"])
-
+    result = fetch_aqi_forecast(lat, lon, start_time, end_time)
     return result
-
 
 
 def save_aqi_data(uid: str, data: dict):
